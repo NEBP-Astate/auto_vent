@@ -41,8 +41,8 @@ r_c4 = const(0xA8) # read PROM C4 command
 r_c5 = const(0xAA) # read PROM C5 command
 r_c6 = const(0xAC) # read PROM C6 command
 r_adc = const(0x00) # read ADC command
-r_d1 = const(0x44) # convert D1 (OSR=4096)
-r_d2 = const(0x54) # convert D2 (OSR=4096)
+r_d1 = const(0x48) # convert D1 (OSR=4096)
+r_d2 = const(0x58) # convert D2 (OSR=4096)
 p_address = 0x76 #pressure sensor i2c address
 
 # list of commands in hex for MS8607 humidity sensor
@@ -142,10 +142,7 @@ def read_adc(): #read ADC 24 bits unsigned
   return value
   
 
-
-
-
- def GetPressure():
+def GetPressure():
     #start on pressure sensor
     # sensor_addr = p_address #set i2c address to pressure sensor
     start_d1() # start D1 conversion
@@ -156,9 +153,9 @@ def read_adc(): #read ADC 24 bits unsigned
     raw_d2 = read_adc()
     dT = raw_d2 - (C5 * 256) # difference between actual and ref P temp
     Temp = (2000 + (dT * (C6/8388608)))/100 #actual P temperature
-    OFF = (C2*131072) + (C4*dT/64) # offset at actual P temperature
-    SENS = (C1*65536) + (C3*dT/128) # pressure offset at actual temperature
-    Pres = (raw_d1*SENS/2097152 - OFF)/3276800 # barometric pressure
+    OFF = (C2*65536) + (C4*dT/128) # offset at actual P temperature
+    SENS = (C1*32768) + (C3*dT/256) # pressure offset at actual temperature
+    Pres = (raw_d1*SENS/2097152 - OFF)/32768 # barometric pressure
     print ('P Temp = ', '%.1fC' % Temp)
     print ('Pressure = ', '%.1f ' % Pres)
     time.sleep(1.0)
@@ -224,6 +221,7 @@ def main():
     time.sleep(1) # short delay during conversion
     # read press sensor calibration PROM
     sensor_addr = addresses[0]
+    global C1, C2, C3, C4, C5, C6
     C1 = read_c1()
     C2 = read_c2()
     C3 = read_c3()
