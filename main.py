@@ -9,6 +9,7 @@ Forked by: R. Carroll 1/2024
 
 Incorporated XBee3 micropython code example for xbee3 module interface to MS8607
 from https://github.com/eewiki/Xbee3-MicroPython/blob/1a2f5dc80b099c522e679adff1a4310b5239a44a/samples/Zigbee_MS8607_i2c_rev1.py
+(need to adapt calculation to other pressure modules, i.e., MS5611. This one currently uses MS5803)
 
 aim here is to trigger balloon venting at fixed pressure and close vent at target pressure
 one expected issue here is the trigger needs to be ~26 mbar but the module
@@ -152,12 +153,33 @@ def GetPressure():
     time.sleep(1.0) 
     raw_d2 = read_adc()
     dT = raw_d2 - (C5 * 256) # difference between actual and ref P temp
-    Temp = (2000 + (dT * (C6/8388608)))/100 #actual P temperature
+    Temp = (2000 + (dT * (C6/8388608))) #actual P temperature
     OFF = (C2*65536) + (C4*dT/128) # offset at actual P temperature
     SENS = (C1*32768) + (C3*dT/256) # pressure offset at actual temperature
     Pres = (raw_d1*SENS/2097152 - OFF)/32768 # barometric pressure
     print ('P Temp = ', '%.1fC' % Temp)
     print ('Pressure = ', '%.1f ' % Pres)
+    #add second order temperature correction
+    #currently this is really clunky. needs to use NumPy?
+    T2 = 0
+    OFF2 = 0
+    SENS2 = 0
+    if Temp < 2000.0:
+       T2 = 3*(dT**2)/8589934592
+       OFF2 = 3*((Temp-2000)**2)/2
+       SENS2 = 5*((Temp-2000)**2)/8
+    if Temp < -1500.0:
+       OFF2 = OFF2+7*((Temp +1500)**2)
+       SENS2 = SENS2 + 4*((Temp + 1500)**2)
+    Temp = Temp - T2
+    OFF = OFF - OFF2
+    SENS = SENS - SENS2 
+    Pres = (raw_d1*SENS/2097152 - OFF)/32768 # barometric pressure
+    print ('Corrected Temperature', '%.1f' % Temp)
+    print ('Corrected Pressure', '%.1f ' % Pres)
+    ##for debugging purposes
+    xbee.transmit(xbee.ADDR_BROADCAST, 'T=%.1f,P=%.1f' % (Temp, Pres))
+    ##
     time.sleep(1.0)
     return Pres
 
