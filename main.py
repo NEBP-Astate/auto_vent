@@ -56,6 +56,13 @@ t_temp = const(0xE3) # trigger temperature measurement, hold master
 REGISTER_FORMAT = '>h' # ">" big endian, "h" 2 bytes
 REGISTER_SHIFT = 4 # rightshift 4 for 12 bit resolution
 
+## list of constants for auto_valve functions
+## set these to whatever works for your flight
+VOlevel = 260.0 #Valve Open trigger at 26 mbar (~80k ft)
+VClevel = 150.0 #Valve Close trigger at 15 mbar (~95k ft)
+VCtimeout = 15.0 #set a timeout for vent close in case VClevel is not attained within VCtimeout
+
+autovalve = 0
 
 # I2C setup
 i2c = I2C(1, freq=100000)
@@ -145,7 +152,7 @@ def read_adc(): #read ADC 24 bits unsigned
 
 def GetPressure():
     #start on pressure sensor
-    # sensor_addr = p_address #set i2c address to pressure sensor
+    ##these 2nd order settings are for the MS5611 module
     start_d1() # start D1 conversion
     time.sleep(1.0) # short delay during conversion
     raw_d1 = read_adc()
@@ -165,12 +172,12 @@ def GetPressure():
     OFF2 = 0
     SENS2 = 0
     if Temp < 2000.0:
-       T2 = 3*(dT**2)/8589934592
-       OFF2 = 3*((Temp-2000)**2)/2
-       SENS2 = 5*((Temp-2000)**2)/8
+       T2 = (dT**2)/2147483648
+       OFF2 = 5*((Temp-2000)**2)/2
+       SENS2 = 5*((Temp-2000)**2)/4
     if Temp < -1500.0:
        OFF2 = OFF2+7*((Temp +1500)**2)
-       SENS2 = SENS2 + 4*((Temp + 1500)**2)
+       SENS2 = SENS2 + 11*((Temp + 1500)**2)/2
     Temp = Temp - T2
     OFF = OFF - OFF2
     SENS = SENS - SENS2 
@@ -187,11 +194,22 @@ def GetPressure():
 ##measurements while recieving xbee packets at irregular intervals
 ##xbee needs to use "data reception callback" rather than polling?
 def GetCommand():
-    packet = None  # Set packet to none
-    while packet is None:   # While no packet has come in
-        packet = xbee.receive()     # Try to receive packet
-    [xbee.receive() for i in range(100)]    # Clear the buffer
-    return packet.get('payload').decode('utf-8')[:3]    # Return the last three charters decoded
+    # packet = None  # Set packet to none
+    # while packet is None:   # While no packet has come in
+    #     packet = xbee.receive()     # Try to receive packet
+    # [xbee.receive() for i in range(100)]    # Clear the buffer
+    # return packet.get('payload').decode('utf-8')[:3]    # Return the last three charters decoded
+  try:
+     packet = xbee.receive()
+     [xbee.receive() for i in range(100)]
+     reply = packet.get('payload').decode('utf-8')[:3]
+     if reply is not None:
+        print("Command:"+reply)
+     return reply
+  except:
+     reply = ''
+     return reply
+
 
 def ProcessCommand(Command):
     print(Command)
@@ -202,7 +220,9 @@ def ProcessCommand(Command):
     elif Command == 'ABC':  #idle
         idle()
     elif Command =='VWX':
-        Valve_Auto()
+        Auto_Valve_On()
+    elif Command =='PQR':
+        Auto_Valve_Off()
 
 def TransmitCommand(Command):
     print(Command)
@@ -225,7 +245,14 @@ def Valve_Close():
     msp_pin.value(0)
     Blink(asc_led)
 
-def Valve_Auto():
+def Auto_Valve_On():
+    global autovalve
+    autovalve = 1
+    Blink(asc_led)
+
+def Auto_Valve_Off():
+    global autovalve
+    autovalve = 0
     Blink(asc_led)
 
 def Blink(pin):
@@ -261,12 +288,19 @@ def main():
 
     while(1):
         
-        GetPressure()
 
+        Pres = GetPressure()
+        if autovalve:
+          if Pres < VClevel:
+            TransmitCommand('MNO')
+          elif Pres < VOlevel & Pres > VClevel:
+            TransmitCommand('JKL')
+          
+            
+        ##need to add timeout after valve_open sent
         time.sleep(3) #need to pause to sync clock, otherwise transmit will be messed up
         ProcessCommand(GetCommand())
-        ##needs to send vent on/off commands based on pressure reading with TransmitCommand()
-        ##allow for override by issuing Auto_Valve_Off command via iridium
+        
         if Pin.value(Hall_pin)==1:
             Hall_effect="VCR"
             # Hall_effect = str(Pin.value(Hall_pin))  # converts pin value of Hall_pin to a String to use the transmit function later
