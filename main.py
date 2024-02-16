@@ -58,8 +58,8 @@ REGISTER_SHIFT = 4 # rightshift 4 for 12 bit resolution
 
 ## list of constants for auto_valve functions
 ## set these to whatever works for your flight
-VOlevel = 260.0 #Valve Open trigger at 26 mbar (~80k ft)
-VClevel = 150.0 #Valve Close trigger at 15 mbar (~95k ft)
+VOlevel = 2600.0 #Valve Open trigger at 26 mbar (~80k ft)
+VClevel = 1500.0 #Valve Close trigger at 15 mbar (~95k ft)
 VCtimeout = 15.0 #set a timeout for vent close in case VClevel is not attained within VCtimeout
 
 autovalve = 0
