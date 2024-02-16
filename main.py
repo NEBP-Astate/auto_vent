@@ -9,7 +9,8 @@ Forked by: R. Carroll 1/2024
 
 Incorporated XBee3 micropython code example for xbee3 module interface to MS8607
 from https://github.com/eewiki/Xbee3-MicroPython/blob/1a2f5dc80b099c522e679adff1a4310b5239a44a/samples/Zigbee_MS8607_i2c_rev1.py
-(need to adapt calculation to other pressure modules, i.e., MS5611. This one currently uses MS5803)
+
+vent board has integrated MS5607 pressure sensor
 
 aim here is to trigger balloon venting at fixed pressure and close vent at target pressure
 one expected issue here is the trigger needs to be ~26 mbar but the module
@@ -33,7 +34,7 @@ msp_pin = Pin(machine.Pin.board.P7, Pin.OUT)   #Enable pin on XBEE3 set to low i
 heater_pin = Pin(machine.Pin.board.D18, Pin.OUT, value=1)
 Hall_pin = Pin(machine.Pin.board.D3, Pin.IN, pull=None)
 
-# list of commands in hex for MS8607 pressure sensor
+# list of commands in hex for MS5607 pressure sensor
 c_reset = const(0x1E) # reset command 
 r_c1 = const(0xA2) # read PROM C1 command
 r_c2 = const(0xA4) # read PROM C2 command
@@ -46,7 +47,6 @@ r_d1 = const(0x48) # convert D1 (OSR=4096)
 r_d2 = const(0x58) # convert D2 (OSR=4096)
 p_address = 0x76 #pressure sensor i2c address
 
-# list of commands in hex for MS8607 humidity sensor
 
 r_user = const(0xE7) # read user register command
 w_user = const(0xE6) # write user register command
@@ -152,7 +152,6 @@ def read_adc(): #read ADC 24 bits unsigned
 
 def GetPressure():
     #start on pressure sensor
-    ##these 2nd order settings are for the MS5611 module
     start_d1() # start D1 conversion
     time.sleep(1.0) # short delay during conversion
     raw_d1 = read_adc()
@@ -161,8 +160,8 @@ def GetPressure():
     raw_d2 = read_adc()
     dT = raw_d2 - (C5 * 256) # difference between actual and ref P temp
     Temp = (2000 + (dT * (C6/8388608))) #actual P temperature
-    OFF = (C2*65536) + (C4*dT/128) # offset at actual P temperature
-    SENS = (C1*32768) + (C3*dT/256) # pressure offset at actual temperature
+    OFF = (C2*131072) + (C4*dT/64) # offset at actual P temperature
+    SENS = (C1*65536) + (C3*dT/128) # pressure offset at actual temperature
     Pres = (raw_d1*SENS/2097152 - OFF)/32768 # barometric pressure
     print ('P Temp = ', '%.1fC' % Temp)
     print ('Pressure = ', '%.1f ' % Pres)
@@ -173,11 +172,11 @@ def GetPressure():
     SENS2 = 0
     if Temp < 2000.0:
        T2 = (dT**2)/2147483648
-       OFF2 = 5*((Temp-2000)**2)/2
-       SENS2 = 5*((Temp-2000)**2)/4
+       OFF2 = 61*((Temp-2000)**2)/16
+       SENS2 = 2*((Temp-2000)**2)
     if Temp < -1500.0:
-       OFF2 = OFF2+7*((Temp +1500)**2)
-       SENS2 = SENS2 + 11*((Temp + 1500)**2)/2
+       OFF2 = OFF2+15*((Temp +1500)**2)
+       SENS2 = SENS2 + 8*((Temp + 1500)**2)
     Temp = Temp - T2
     OFF = OFF - OFF2
     SENS = SENS - SENS2 
@@ -185,7 +184,7 @@ def GetPressure():
     print ('Corrected Temperature', '%.1f' % Temp)
     print ('Corrected Pressure', '%.1f ' % Pres)
     ##for debugging purposes
-    xbee.transmit(xbee.ADDR_BROADCAST, 'T=%.1f,P=%.1f' % (Temp, Pres))
+    # xbee.transmit(xbee.ADDR_BROADCAST, 'T=%.1f,P=%.1f' % (Temp, Pres))
     ##
     time.sleep(1.0)
     return Pres
@@ -217,8 +216,8 @@ def ProcessCommand(Command):
         Valve_Open()
     elif Command == 'MNO':  #if command is Valve Close command
         Valve_Close()
-    elif Command == 'ABC':  #idle
-        idle()
+    # elif Command == 'ABC':  #idle
+    #     idle()
     elif Command =='VWX':
         Auto_Valve_On()
     elif Command =='PQR':
@@ -290,14 +289,16 @@ def main():
         
 
         Pres = GetPressure()
+        ###quickly check if pressure is rising or falling
+        ###take a rolling average of N samples
+
         if autovalve:
-          if Pres < VClevel:
+          if Pres < VClevel:  ###add condition that pressure is falling
             TransmitCommand('MNO')
-          elif Pres < VOlevel & Pres > VClevel:
-            TransmitCommand('JKL')
           
-            
-        ##need to add timeout after valve_open sent
+          ##if pressure is rising after vent_open issued, then close vent.
+          ##also close vent if 15 minutes elapse aftern auto_vent open issued
+          
         time.sleep(3) #need to pause to sync clock, otherwise transmit will be messed up
         ProcessCommand(GetCommand())
         
